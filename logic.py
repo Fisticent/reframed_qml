@@ -49,6 +49,24 @@ def block_input(timeout=BLOCK_INPUT_TIMEOUT_SEC):
             except OSError as e:
                 log_exception("BlockInput release", e)
 
+
+def exclusive_macro(method):
+    """Empêche deux macros lourdes (zaap, sync, invite…) de tourner en parallèle."""
+
+    def wrapper(self, *args, **kwargs):
+        if not self._macro_lock.acquire(blocking=False):
+            self._notify_error("⚠️ Une macro est déjà en cours.")
+            return
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            self._macro_lock.release()
+
+    wrapper.__name__ = method.__name__
+    wrapper.__doc__ = method.__doc__
+    return wrapper
+
+
 class ShellHookListener:
     """ 
     Crée une fenêtre Win32 invisible pour écouter les messages SHELLHOOK (clignotement orange).
@@ -167,6 +185,7 @@ class DofusLogic:
         self.error_callback = None
         self.shell_listener = None
         self.last_flash_times = {} # Cooldown pour éviter les doubles clics
+        self._macro_lock = threading.Lock()
 
     def shell_hook_needed(self):
         return bool(self.config.data.get("auto_accept_trade", False))
@@ -215,6 +234,7 @@ class DofusLogic:
                 target=self._execute_auto_accept_trade, args=(acc_found,), daemon=True
             ).start()
 
+    @exclusive_macro
     def _execute_auto_accept_trade(self, acc):
         with block_input():
             try:
@@ -610,6 +630,7 @@ class DofusLogic:
         if delay_after > 0:
             time.sleep(delay_after)
 
+    @exclusive_macro
     def broadcast_key(self, key_name):
         time.sleep(0.1)
         active_accs = self.get_cycle_list()
@@ -635,6 +656,7 @@ class DofusLogic:
             except Exception as e:
                 log_exception("broadcast_key", e)
 
+    @exclusive_macro
     def execute_paste_enter(self):
         time.sleep(0.1)
         active_accs = self.get_cycle_list()
@@ -659,6 +681,7 @@ class DofusLogic:
             except Exception as e:
                 log_exception("execute_paste_enter", e)
 
+    @exclusive_macro
     def execute_auto_zaap(self):
         active_accs = self.get_cycle_list()
         zaaps_pos = self.config.data["macro_positions"].get("zaaps", {})
@@ -722,6 +745,7 @@ class DofusLogic:
             except Exception as e:
                 log_exception("execute_auto_zaap", e)
 
+    @exclusive_macro
     def sync_click_all(self):
         active_accs = self.get_cycle_list()
         if not active_accs:
@@ -787,6 +811,7 @@ class DofusLogic:
             except Exception as e:
                 log_exception("sync_click_all", e)
 
+    @exclusive_macro
     def sync_right_click_all(self):
         active_accs = self.get_cycle_list()
         if not active_accs:
@@ -852,6 +877,7 @@ class DofusLogic:
             except Exception as e:
                 log_exception("sync_right_click_all", e)
 
+    @exclusive_macro
     def execute_group_invite(self):
         leader = self.config.data.get("leader_name")
         chat_pos = self.config.data["macro_positions"].get("chat_position")
@@ -917,6 +943,7 @@ class DofusLogic:
             except Exception as e:
                 log_exception("execute_group_invite", e)
 
+    @exclusive_macro
     def execute_swap_xp_drop(self):
         pos = self.config.data["macro_positions"].get("xp_drop_button")
         if not pos:

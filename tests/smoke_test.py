@@ -55,6 +55,22 @@ def main():
     check(cfg2.data.get("window_x") == 123, "config persiste window_x")
     check(cfg2.data.get("prev_key") == "tab", "config persiste prev_key")
 
+    print("== 2b. Config reset ==")
+    from config_manager import default_settings_data
+    tmp_reset = os.path.join(tempfile.gettempdir(), "reframed_smoke_reset.json")
+    if os.path.exists(tmp_reset):
+        os.remove(tmp_reset)
+    cfg_reset = config_manager.Config(filename=tmp_reset)
+    cfg_reset.data["prev_key"] = "custom"
+    cfg_reset.data["leader_name"] = "TestLeader"
+    cfg_reset.save()
+    cfg_reset.reset_settings()
+    defaults = default_settings_data()
+    check(cfg_reset.data.get("prev_key") == defaults["prev_key"], "reset restaure prev_key")
+    check(cfg_reset.data.get("leader_name") == defaults["leader_name"], "reset vide leader_name")
+    check(cfg_reset.migrated_from is None, "reset sans migration legacy")
+    check(os.path.exists(tmp_reset), "reset réécrit settings.json")
+
     print("== 3. QApplication + QML ==")
     from PySide6.QtCore import QUrl, QTimer
     from PySide6.QtGui import QGuiApplication
