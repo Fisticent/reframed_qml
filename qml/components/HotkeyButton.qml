@@ -9,6 +9,7 @@ Item {
     property string labelText: ""
     property string tooltipText: ""
     property bool compact: false
+    property bool macroEnabled: true
 
     property bool waiting: false
     readonly property string keyValue: app.hotkeys[configKey] || ""
@@ -72,16 +73,15 @@ Item {
             Layout.preferredHeight: 30
             hoverEnabled: true
             focusPolicy: Qt.StrongFocus
-            text: "✕"
             ToolTip.visible: hovered && app.showTooltips
             ToolTip.text: "Effacer le raccourci"
             ToolTip.delay: 400
-            contentItem: Text {
-                text: "✕"
-                color: Colors.text_muted
-                font.pixelSize: Colors.font_size_ui
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
+            contentItem: Image {
+                anchors.centerIn: parent
+                width: 12; height: 12
+                sourceSize.width: 12; sourceSize.height: 12
+                source: app.assetUrl("icons/close.svg")
+                opacity: parent.hovered ? 1.0 : 0.7
             }
             background: Rectangle {
                 radius: Colors.radius_control
@@ -105,7 +105,7 @@ Item {
         Text {
             text: root.labelText
             color: Colors.text_muted
-            font.pixelSize: 9
+            font.pixelSize: Colors.font_size_secondary
             font.bold: true
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
@@ -121,6 +121,7 @@ Item {
                 id: keyBtnCompact
                 Layout.preferredWidth: 54
                 Layout.preferredHeight: 24
+                enabled: root.macroEnabled
                 hoverEnabled: true
                 focusPolicy: Qt.StrongFocus
                 text: root.waiting ? "…" : (root.keyValue ? root.keyValue : "—")
@@ -135,7 +136,7 @@ Item {
                     color: root.keyValue || root.waiting
                            ? Theme.textForFill(keyBtnCompact.fillColor, Colors)
                            : Colors.text_muted
-                    font.pixelSize: 10
+                    font.pixelSize: Colors.font_size_secondary
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -156,16 +157,15 @@ Item {
                 Layout.preferredHeight: 24
                 hoverEnabled: true
                 focusPolicy: Qt.StrongFocus
-                text: "✕"
                 ToolTip.visible: hovered && app.showTooltips
                 ToolTip.text: "Effacer"
                 ToolTip.delay: 400
-                contentItem: Text {
-                    text: "✕"
-                    color: Colors.text_muted
-                    font.pixelSize: 9
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+                contentItem: Image {
+                    anchors.centerIn: parent
+                    width: 10; height: 10
+                    sourceSize.width: 10; sourceSize.height: 10
+                    source: app.assetUrl("icons/close.svg")
+                    opacity: parent.hovered ? 1.0 : 0.65
                 }
                 background: Rectangle {
                     radius: 4

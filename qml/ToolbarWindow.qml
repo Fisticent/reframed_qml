@@ -49,8 +49,9 @@ Window {
         property color hoverColor: Colors.primary_hover
         implicitWidth: 32
         implicitHeight: 32
-        hoverEnabled: true
+        hoverEnabled: enabled
         focusPolicy: Qt.StrongFocus
+        opacity: enabled ? 1.0 : 0.42
 
         ToolTip.visible: hovered && tip !== "" && app.showTooltips
         ToolTip.text: tip
@@ -152,7 +153,7 @@ Window {
                     onClicked: app.refresh()
                 }
                 MacroButton {
-                    iconSource: app.skinUrl("dupliquer"); fallback: "📋"
+                    iconSource: app.assetUrl("icons/paste.svg")
                     tip: "Coller + Entrée sur toutes les pages"
                     baseColor: Colors.primary_button; hoverColor: Colors.primary_button_hover
                     onClicked: app.pasteEnter()
@@ -204,14 +205,16 @@ Window {
                 }
                 MacroButton {
                     visible: bar.showZaap
+                    enabled: app.canAutoZaap()
                     iconSource: app.assetUrl("skin/zaap.png"); fallback: "Z"
-                    tip: "Auto-Zaap"
+                    tip: app.canAutoZaap() ? "Auto-Zaap" : "Calibrez tous les Zaaps"
                     onClicked: app.autoZaap()
                 }
                 MacroButton {
                     visible: bar.showInvite
+                    enabled: app.canGroupInvite()
                     iconSource: app.assetUrl("skin/invite.png"); fallback: "G"
-                    tip: "Invitation de Groupe"
+                    tip: app.canGroupInvite() ? "Invitation de Groupe" : "Chat calibré + chef requis"
                     onClicked: app.groupInvite()
                 }
             }

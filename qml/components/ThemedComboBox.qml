@@ -28,7 +28,7 @@ ComboBox {
         y: (control.height - height) / 2
         text: "▾"
         color: Colors.text_muted
-        font.pixelSize: 10
+        font.pixelSize: Colors.font_size_secondary
     }
 
     popup: Popup {

@@ -241,6 +241,19 @@ class AppController(QObject):
 
     calibStates = Property("QVariantMap", _get_calib, notify=calibChanged)
 
+    @Slot(result=bool)
+    def canGroupInvite(self):
+        c = self._get_calib()
+        return bool(c.get("chat")) and bool(self.config.data.get("leader_name"))
+
+    @Slot(result=bool)
+    def canAutoZaap(self):
+        return self._get_calib().get("zaap") == "full"
+
+    @Slot(result=bool)
+    def canSwapXp(self):
+        return bool(self._get_calib().get("xp"))
+
     def _get_colors(self):
         return dict(C)
 

@@ -59,6 +59,7 @@ COLORS = {
     "toolbar_header": "#3d5a2a",
     "font_family": "Segoe UI",
     "font_size_ui": 12,
+    "font_size_secondary": 11,
     "font_size_heading": 14,
     "font_size_title": 20,
     "radius_card": 8,

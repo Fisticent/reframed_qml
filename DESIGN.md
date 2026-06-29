@@ -32,6 +32,7 @@ Règle contraste : fonds saturés clairs (`primary`, `success`, `warning`, `lead
 |-------|--------|
 | `font_family` | Segoe UI (Windows) |
 | `font_size_ui` | 12 |
+| `font_size_secondary` | 11 |
 | `font_size_heading` | 14 |
 | `font_size_title` | 20 |
 

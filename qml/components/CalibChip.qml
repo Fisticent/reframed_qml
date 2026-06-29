@@ -62,7 +62,7 @@ Button {
             visible: control.done || control.partial
             text: control.done ? "OK" : "Part."
             color: control.ink
-            font.pixelSize: 9
+            font.pixelSize: Colors.font_size_secondary
             font.bold: true
             opacity: 0.9
         }

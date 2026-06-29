@@ -307,7 +307,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         text: "À faire une fois — l'état reste visible ici."
                         color: Colors.text_muted
-                        font.pixelSize: 10
+                        font.pixelSize: Colors.font_size_secondary
                     }
                     RowLayout {
                         Layout.fillWidth: true
@@ -328,9 +328,12 @@ ApplicationWindow {
                 ThemedButton {
                     Layout.fillWidth: true
                     text: "Inviter groupe"
+                    enabled: app.canGroupInvite()
                     baseColor: Colors.primary_button
                     hoverColor: Colors.primary_button_hover
-                    tooltipText: "Auto-invitation de l'équipe via le chat"
+                    tooltipText: app.canGroupInvite()
+                        ? "Auto-invitation de l'équipe via le chat"
+                        : "Calibre le chat et définis un chef de groupe"
                     onClicked: app.groupInvite()
                 }
                 ThemedButton {
@@ -363,7 +366,8 @@ ApplicationWindow {
                                 Text { text: "Comptes actifs"; color: Colors.text; font.pixelSize: 13 }
                                 Item { Layout.fillWidth: true }
                                 ThemedButton {
-                                    text: "⚙️"; implicitWidth: 28; implicitHeight: 28
+                                    implicitWidth: 28; implicitHeight: 28
+                                    iconSource: app.assetUrl("icons/teams.svg")
                                     baseColor: Colors.secondary_hover; hoverColor: Colors.secondary_dark
                                     tooltipText: "Gérer les raccourcis avancés par personnage"
                                     onClicked: charWin.openManager()
@@ -387,17 +391,30 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             radius: 6
                             implicitHeight: 38
-                            color: modelData.name === mainWin.activeName ? Colors.radial_active : "transparent"
+                            readonly property bool isActive: modelData.name === mainWin.activeName
+                            color: isActive ? Colors.radial_active : "transparent"
+                            border.width: isActive ? 1 : 0
+                            border.color: Colors.secondary_hover
+
+                            Rectangle {
+                                width: 3
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                anchors.leftMargin: 0
+                                radius: 2
+                                visible: parent.isActive
+                                color: Colors.focus_ring
+                            }
+
                             RowLayout {
                                 anchors.fill: parent
                                 anchors.leftMargin: 6; anchors.rightMargin: 6
                                 spacing: 4
                                 Image {
-                                    source: modelData.icon
-                                    visible: modelData.icon !== ""
+                                    source: modelData.icon !== "" ? modelData.icon : app.assetUrl("icons/user.svg")
                                     width: 24; height: 24; sourceSize.width: 24; sourceSize.height: 24
                                 }
-                                Text { visible: modelData.icon === ""; text: "👤"; color: Colors.text }
                                 ThemedCheckBox {
                                     checked: modelData.active
                                     text: modelData.name.substring(0, 20)
@@ -445,7 +462,8 @@ ApplicationWindow {
                                     onClicked: app.setLeader(modelData.name)
                                 }
                                 ThemedButton {
-                                    text: "✖"; implicitWidth: 30; implicitHeight: 30
+                                    implicitWidth: 30; implicitHeight: 30
+                                    iconSource: app.assetUrl("icons/close.svg")
                                     baseColor: Colors.danger; hoverColor: Colors.danger_hover
                                     tooltipText: "Fermer la fenêtre"
                                     onClicked: app.closeAccount(modelData.name)
@@ -527,11 +545,24 @@ ApplicationWindow {
                 }
             }
 
-            Text {
+            RowLayout {
                 Layout.fillWidth: true
-                text: "Touches jeu & roue → ⚙️ Paramètres"
-                color: Colors.text_muted
-                font.pixelSize: 9
+                spacing: 4
+                Text {
+                    text: "Touches jeu & roue"
+                    color: Colors.text_muted
+                    font.pixelSize: Colors.font_size_secondary
+                }
+                Image {
+                    source: app.assetUrl("icons/settings.svg")
+                    width: 12; height: 12
+                    sourceSize.width: 12; sourceSize.height: 12
+                }
+                Text {
+                    text: "Paramètres"
+                    color: Colors.text_muted
+                    font.pixelSize: Colors.font_size_secondary
+                }
             }
 
             GridLayout {
@@ -547,7 +578,7 @@ ApplicationWindow {
                 HotkeyButton { compact: true; configKey: "toggle_app_key"; labelText: "UI"; tooltipText: "Masquer/Afficher l'app" }
                 HotkeyButton { compact: true; configKey: "sync_key"; labelText: "Clic G."; tooltipText: "Clic gauche synchronisé" }
                 HotkeyButton { compact: true; configKey: "sync_right_key"; labelText: "Clic D."; tooltipText: "Clic droit synchronisé" }
-                HotkeyButton { compact: true; configKey: "swap_xp_drop_key"; labelText: "Swap"; tooltipText: "Clic synchro (XP/Drop)" }
+                HotkeyButton { compact: true; configKey: "swap_xp_drop_key"; labelText: "Swap"; macroEnabled: app.canSwapXp(); tooltipText: app.canSwapXp() ? "Clic synchro (XP/Drop)" : "Calibre XP/Drop d'abord" }
             }
         }
     }
@@ -593,7 +624,7 @@ ApplicationWindow {
             ThemedSwitch {
                 text: "Auto-invite"
                 checked: app.autoInvite
-                tooltipText: "Accepter auto les invitations de groupe"
+                tooltipText: "Accepter automatiquement sur les alts après Inviter groupe"
                 onToggled: app.saveBool("auto_group_accept", checked)
             }
             ThemedSwitch {
@@ -613,7 +644,7 @@ ApplicationWindow {
         id: conflictDialog
         anchors.centerIn: parent
         modal: true
-        title: "⚠️ Conflit de logiciels détecté"
+        title: "Conflit de logiciels détecté"
         width: 460
         property alias ignoreFuture: ignoreChk.checked
         background: Rectangle { color: Colors.bg_card; radius: Colors.radius_card; border.color: Colors.warning; border.width: 1 }

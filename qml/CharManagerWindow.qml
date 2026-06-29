@@ -8,7 +8,7 @@ Window {
     id: win
     width: 620
     height: 680
-    title: "⚙️ Gestionnaire de Binds Avancé REFRAMED"
+    title: "Gestionnaire de Binds Avancé"
     flags: Qt.Window | Qt.WindowStaysOnTopHint
     color: Colors.bg
     visible: false
