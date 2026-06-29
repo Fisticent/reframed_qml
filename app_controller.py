@@ -472,10 +472,6 @@ class AppController(QObject):
     def onAutoTradeChange(self):
         self._sync_shell_hook()
 
-    @Slot()
-    def onAutoGroupAcceptChange(self):
-        self._sync_shell_hook()
-
     # ======================================================================
     #  Fenêtre / tray
     # ======================================================================

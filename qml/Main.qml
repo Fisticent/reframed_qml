@@ -594,7 +594,7 @@ ApplicationWindow {
                 text: "Auto-invite"
                 checked: app.autoInvite
                 tooltipText: "Accepter auto les invitations de groupe"
-                onToggled: { app.saveBool("auto_group_accept", checked); app.onAutoGroupAcceptChange() }
+                onToggled: app.saveBool("auto_group_accept", checked)
             }
             ThemedSwitch {
                 text: "Auto-échange"

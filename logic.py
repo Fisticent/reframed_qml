@@ -169,13 +169,10 @@ class DofusLogic:
         self.last_flash_times = {} # Cooldown pour éviter les doubles clics
 
     def shell_hook_needed(self):
-        return bool(
-            self.config.data.get("auto_accept_trade", False)
-            or self.config.data.get("auto_group_accept", False)
-        )
+        return bool(self.config.data.get("auto_accept_trade", False))
 
     def start_shell_hook(self):
-        """Démarre le listener de clignotement (échange ou invitation groupe)."""
+        """Démarre le listener de clignotement pour l'auto-accept échange."""
         if not self.shell_hook_needed():
             return
         if self.shell_listener:
@@ -213,37 +210,10 @@ class DofusLogic:
         if not acc_found:
             return
 
-        leader_name = self.config.data.get("leader_name", "")
-        if (
-            self.config.data.get("auto_group_accept", False)
-            and acc_found["name"] != leader_name
-            and self.config.data["macro_positions"].get("group_accept_button")
-        ):
-            threading.Thread(
-                target=self._execute_auto_accept_group, args=(acc_found,), daemon=True
-            ).start()
-            return
-
         if self.config.data.get("auto_accept_trade", False):
             threading.Thread(
                 target=self._execute_auto_accept_trade, args=(acc_found,), daemon=True
             ).start()
-
-    def _execute_auto_accept_group(self, acc):
-        accept_pos = self.config.data["macro_positions"].get("group_accept_button")
-        coords = self.get_screen_coords_from_saved(acc["hwnd"], accept_pos)
-        if not coords:
-            return
-        x_c, y_c = coords
-        with block_input():
-            try:
-                self.focus_window(acc["hwnd"])
-                time.sleep(0.15)
-                win32api.SetCursorPos((x_c, y_c))
-                time.sleep(0.05)
-                self._hardware_click(x_c, y_c)
-            except Exception as e:
-                log_exception(f"auto_accept_group ({acc['name']})", e)
 
     def _execute_auto_accept_trade(self, acc):
         with block_input():
@@ -924,7 +894,7 @@ class DofusLogic:
                     time.sleep(random.uniform(0.3, 0.8))
 
                 accept_pos = self.config.data["macro_positions"].get("group_accept_button")
-                if accept_pos:
+                if self.config.data.get("auto_group_accept", False) and accept_pos:
                     time.sleep(0.5)
                     for acc in active_accs:
                         if acc["name"] == leader:
