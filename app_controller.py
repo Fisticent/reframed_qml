@@ -89,6 +89,7 @@ class AppController(QObject):
     requestHideMain = Signal()
     requestToggleMain = Signal()
     requestQuit = Signal()
+    updateReadyToApply = Signal()        # thread-safe : update téléchargée en arrière-plan, prête à s'appliquer
     hotkeyCaptured = Signal(str, str)           # config_key, value
     radialShowRequested = Signal(int, int, list, str)
     radialHideRequested = Signal()
@@ -722,6 +723,8 @@ class AppController(QObject):
                 self.hotkey_actions[key]()
                 time.sleep(0.05)
                 self.restore_modifiers(mods)
+            except Exception as e:
+                log_exception("hotkey safe_execute", e)
             finally:
                 self._hotkey_down.discard(key)
 
@@ -1006,7 +1009,8 @@ class AppController(QObject):
         if new_value:
             for k in list(self.config.data.keys()):
                 if (k.endswith("_key") or k.endswith("_hotkey")) and k != config_key:
-                    if self.config.data[k] == new_value:
+                    existing = self.config.data[k]
+                    if isinstance(existing, str) and existing.lower() == new_value.lower():
                         self.config.data[k] = ""
         self.config.data[config_key] = new_value
         self.config.save()

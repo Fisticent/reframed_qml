@@ -450,30 +450,30 @@ class DofusLogic:
             if acc["name"] == name:
                 self.leader_hwnd = acc["hwnd"]
 
+    def _terminate_process_for_window(self, hwnd, name):
+        _, pid = win32process.GetWindowThreadProcessId(hwnd)
+        try:
+            handle = ctypes.windll.kernel32.OpenProcess(1, False, pid)
+            if not handle:
+                log_exception(f"close_account_window ({name})", OSError("OpenProcess a échoué"))
+                return
+            try:
+                ctypes.windll.kernel32.TerminateProcess(handle, 0)
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+        except Exception as e:
+            log_exception(f"close_account_window ({name})", e)
+
     def close_account_window(self, name):
         for acc in self.all_accounts:
             if acc["name"] == name:
-                hwnd = acc["hwnd"]
-                _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                try:
-                    handle = ctypes.windll.kernel32.OpenProcess(1, False, pid)
-                    ctypes.windll.kernel32.TerminateProcess(handle, 0)
-                    ctypes.windll.kernel32.CloseHandle(handle)
-                except Exception as e:
-                    log_exception(f"close_account_window ({name})", e)
+                self._terminate_process_for_window(acc["hwnd"], name)
                 break
 
     def close_all_active_accounts(self):
         active_accs = self.get_cycle_list()
         for acc in active_accs:
-            hwnd = acc["hwnd"]
-            _, pid = win32process.GetWindowThreadProcessId(hwnd)
-            try:
-                handle = ctypes.windll.kernel32.OpenProcess(1, False, pid)
-                ctypes.windll.kernel32.TerminateProcess(handle, 0)
-                ctypes.windll.kernel32.CloseHandle(handle)
-            except Exception as e:
-                log_exception(f"close_all_active_accounts ({acc['name']})", e)
+            self._terminate_process_for_window(acc["hwnd"], acc["name"])
 
     def focus_window(self, hwnd):
         if not hwnd:

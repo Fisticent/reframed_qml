@@ -11,6 +11,8 @@ L'état (items, hoveredIndex, position) est exposé à QML via Properties.
 
 import os
 import math
+import ctypes
+from ctypes import wintypes
 
 import win32api
 import win32con
@@ -25,6 +27,37 @@ try:
     import pygame
 except Exception:
     pygame = None
+
+MONITOR_DEFAULTTONEAREST = 2
+MDT_EFFECTIVE_DPI = 0
+
+try:
+    _MonitorFromPoint = ctypes.windll.user32.MonitorFromPoint
+    _MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+    _MonitorFromPoint.restype = wintypes.HMONITOR
+
+    _GetDpiForMonitor = ctypes.windll.shcore.GetDpiForMonitor
+    _GetDpiForMonitor.argtypes = [
+        wintypes.HMONITOR, ctypes.c_int,
+        ctypes.POINTER(ctypes.c_uint), ctypes.POINTER(ctypes.c_uint),
+    ]
+except OSError:
+    _MonitorFromPoint = None
+    _GetDpiForMonitor = None
+
+
+def dpi_scale_at(x, y):
+    """DPI scale (1.0 = 96 DPI) du moniteur physique sous le point (x, y) en pixels win32."""
+    if _MonitorFromPoint is None or _GetDpiForMonitor is None:
+        return 1.0
+    try:
+        hmonitor = _MonitorFromPoint(wintypes.POINT(int(x), int(y)), MONITOR_DEFAULTTONEAREST)
+        dpi_x = ctypes.c_uint()
+        dpi_y = ctypes.c_uint()
+        _GetDpiForMonitor(hmonitor, MDT_EFFECTIVE_DPI, ctypes.byref(dpi_x), ctypes.byref(dpi_y))
+        return dpi_x.value / 96.0 if dpi_x.value else 1.0
+    except Exception:
+        return 1.0
 
 
 class RadialController(QObject):
@@ -168,6 +201,8 @@ class RadialController(QObject):
         self.itemsChanged.emit()
         self._current_name = current_name or ""
         self.currentNameChanged.emit()
+        # DPI du moniteur réellement sous le curseur (multi-écrans à DPI mixtes)
+        self.scale = dpi_scale_at(x, y)
         # curseur en pixels physiques -> coordonnées logiques Qt
         lx = x / self.scale
         ly = y / self.scale

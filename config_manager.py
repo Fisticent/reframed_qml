@@ -3,6 +3,8 @@ import json
 import os
 import shutil
 import sys
+import tempfile
+import threading
 
 from constants import get_app_dir, log_exception, sanitize_blocked_mouse_hotkeys
 
@@ -179,6 +181,7 @@ class Config:
         self.filename = filename or default_settings_path()
         self.migrated_from = None
         self.data = copy.deepcopy(default_settings_data())
+        self._save_lock = threading.Lock()
         self.load()
 
     def load(self):
@@ -210,11 +213,21 @@ class Config:
 
     def save(self):
         try:
-            settings_dir = os.path.dirname(self.filename)
-            if settings_dir:
-                os.makedirs(settings_dir, exist_ok=True)
-            with open(self.filename, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, indent=4)
+            with self._save_lock:
+                serialized = json.dumps(copy.deepcopy(self.data), indent=4)
+                settings_dir = os.path.dirname(self.filename)
+                if settings_dir:
+                    os.makedirs(settings_dir, exist_ok=True)
+                fd, tmp_path = tempfile.mkstemp(
+                    prefix=".settings_", suffix=".tmp", dir=settings_dir or None)
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        f.write(serialized)
+                    os.replace(tmp_path, self.filename)
+                except Exception:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                    raise
         except Exception as e:
             log_exception(f"écriture {self.filename}", e)
 

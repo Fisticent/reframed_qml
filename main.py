@@ -188,8 +188,9 @@ def is_admin():
 def run_as_admin():
     parent_dir = os.path.dirname(os.path.abspath(__file__))
     if getattr(sys, "frozen", False):
+        params = " ".join(f'"{arg}"' for arg in sys.argv[1:])
         ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", sys.executable, " ".join(sys.argv[1:]), parent_dir, 1)
+            None, "runas", sys.executable, params, parent_dir, 1)
     else:
         script = os.path.abspath(sys.argv[0])
         params = " ".join([f'"{arg}"' for arg in sys.argv[1:]])
@@ -237,16 +238,17 @@ def main():
         run_as_admin()
         sys.exit()
 
-    if "--no-update" not in sys.argv:
-        try:
-            from updater import check_and_apply_update
-            check_and_apply_update()
-        except Exception as e:
-            log_exception("updater", e)
-
     app_sock = None
     if "--no-single" not in sys.argv:
         app_sock = handle_multiple_instances()
+
+    pending_update = None
+    if "--no-update" not in sys.argv:
+        try:
+            from updater import check_update_available
+            pending_update = check_update_available()
+        except Exception as e:
+            log_exception("updater check", e)
 
     qapp = QApplication(sys.argv)
     qt_mcp_probe = _install_qt_mcp_probe()
@@ -295,6 +297,14 @@ def main():
     controller.tray_icon = tray
 
     controller.requestQuit.connect(qapp.quit)
+    controller.updateReadyToApply.connect(controller.quitApp)
+
+    if pending_update is not None:
+        try:
+            from updater import download_and_apply_async
+            download_and_apply_async(pending_update, controller.updateReadyToApply.emit)
+        except Exception as e:
+            log_exception("updater download", e)
 
     def _on_about_to_quit():
         controller.shutdown()

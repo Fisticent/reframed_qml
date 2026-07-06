@@ -2,7 +2,7 @@ import sys
 import os
 import ctypes
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 GITHUB_REPO = "Fisticent/reframed_qml"
 
 
