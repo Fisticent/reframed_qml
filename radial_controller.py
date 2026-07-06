@@ -225,3 +225,18 @@ class RadialController(QObject):
         if index != -1 and self.mixer_active and self.sound_hover:
             self.sound_hover.play()
         self.hoveredChanged.emit()
+
+    def shutdown(self):
+        """Libère le timer et pygame.mixer (évite le verrou _MEI PyInstaller à la sortie)."""
+        try:
+            self._timer.stop()
+        except Exception:
+            pass
+        self.hide()
+        if self.mixer_active and pygame is not None:
+            try:
+                pygame.mixer.stop()
+                pygame.mixer.quit()
+            except Exception as e:
+                log_exception("radial mixer quit", e)
+            self.mixer_active = False

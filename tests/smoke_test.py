@@ -50,9 +50,15 @@ def main():
     cfg = config_manager.Config(filename=tmp)
     cfg.data["prev_key"] = "tab"
     cfg.data["window_x"] = 123
+    cfg.data["window_y"] = 456
+    cfg.data["window_width"] = 640
+    cfg.data["window_height"] = 720
     cfg.save()
     cfg2 = config_manager.Config(filename=tmp)
     check(cfg2.data.get("window_x") == 123, "config persiste window_x")
+    check(cfg2.data.get("window_y") == 456, "config persiste window_y")
+    check(cfg2.data.get("window_width") == 640, "config persiste window_width")
+    check(cfg2.data.get("window_height") == 720, "config persiste window_height")
     check(cfg2.data.get("prev_key") == "tab", "config persiste prev_key")
 
     print("== 2b. Config reset ==")
@@ -133,6 +139,9 @@ def main():
     check(isinstance(controller.property("hotkeys"), dict), "property hotkeys")
     check(controller.property("currentMode") in ("ALL", "Team 1", "Team 2"), "property currentMode")
     check(isinstance(controller.property("calibStates"), dict), "property calibStates")
+    check(isinstance(controller.property("autoZaapReady"), bool), "property autoZaapReady")
+    check(isinstance(controller.property("groupInviteReady"), bool), "property groupInviteReady")
+    check(isinstance(controller.property("swapXpReady"), bool), "property swapXpReady")
     check(isinstance(controller.property("colors"), dict), "property colors")
 
     print("== 5. Slots sûrs (sans Dofus) ==")
@@ -145,6 +154,16 @@ def main():
         check(True, "getStr/getBool/skinUrl/getBindManagerData/refresh OK")
     except Exception as e:
         check(False, f"slot a levé : {e}")
+
+    print("== 5b. Raccourcis souris interdits ==")
+    from constants import hotkey_uses_blocked_mouse, sanitize_blocked_mouse_hotkeys
+    check(hotkey_uses_blocked_mouse("left_click"), "left_click bloqué")
+    check(hotkey_uses_blocked_mouse("alt+right_click"), "alt+right_click bloqué")
+    check(not hotkey_uses_blocked_mouse("f3"), "f3 autorisé")
+    check(not hotkey_uses_blocked_mouse("middle_click"), "middle_click autorisé")
+    sample = {"prev_key": "tab", "sync_key": "left_click", "radial_menu_hotkey": "alt+right_click"}
+    check(sanitize_blocked_mouse_hotkeys(sample), "sanitize détecte les clics G/D")
+    check(sample["prev_key"] == "tab" and sample["sync_key"] == "", "sanitize conserve / efface")
 
     print("== 6. Radial controller ==")
     try:

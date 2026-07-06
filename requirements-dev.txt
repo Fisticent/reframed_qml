@@ -1,0 +1,2 @@
+-r requirements.txt
+qt-mcp @ git+https://github.com/0xCarbon/qt-mcp.git

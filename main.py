@@ -10,6 +10,7 @@ import sys
 import socket
 import ctypes
 import threading
+import base64
 
 # DPI : on laisse Qt6 gérer (PerMonitorV2 par défaut). Le curseur win32 utilisé
 # par la roue radiale est converti via devicePixelRatio (RadialController.scale).
@@ -33,6 +34,147 @@ from app_controller import AppController
 from radial_controller import RadialController
 
 UDP_PORT = 43212
+QT_MCP_DEFAULT_PORT = 9142
+
+
+def _qt_mcp_enabled() -> bool:
+    return os.environ.get("QT_MCP_PROBE") == "1" or "--qt-mcp" in sys.argv
+
+
+def _install_qt_mcp_probe():
+    """In-process JSON-RPC probe for qt-mcp MCP server (dev / agent UX checks)."""
+    if not _qt_mcp_enabled():
+        return None
+    try:
+        from qt_mcp.probe import install
+    except ImportError:
+        print(
+            "[REFRAMED] qt-mcp non installé — pip install -r requirements-dev.txt",
+            file=sys.stderr,
+        )
+        return None
+    port = int(os.environ.get("QT_MCP_PORT", str(QT_MCP_DEFAULT_PORT)))
+    probe = install(port=port)
+    if probe is None:
+        print("[REFRAMED] qt-mcp : échec démarrage probe", file=sys.stderr)
+        return None
+    print(f"[REFRAMED] qt-mcp probe actif sur localhost:{port}", file=sys.stderr)
+    return probe
+
+
+def _patch_qt_mcp_for_qml(probe) -> None:
+    """qt-mcp cible QWidget ; les fenêtres QML sont des QWindow — fallback grab()."""
+    from qt_mcp.probe._qt_compat import QtCore
+
+    QBuffer = QtCore.QBuffer
+    QIODevice = QtCore.QIODevice
+    Qt = QtCore.Qt
+    orig_screenshot = probe._screenshotter.screenshot
+
+    def _encode_pixmap(pixmap, fmt: str, quality: int, max_width: int, max_height: int) -> dict:
+        if pixmap.isNull():
+            raise ValueError("grab() returned null pixmap")
+        if pixmap.width() > max_width or pixmap.height() > max_height:
+            pixmap = pixmap.scaled(
+                max_width,
+                max_height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        image_format = fmt.upper()
+        if image_format not in ("PNG", "JPEG"):
+            image_format = "PNG"
+        buf = QBuffer()
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        if image_format == "JPEG":
+            pixmap.save(buf, "JPEG", quality)
+        else:
+            pixmap.save(buf, "PNG")
+        img_bytes = bytes(buf.data())
+        buf.close()
+        return {
+            "image": base64.b64encode(img_bytes).decode("ascii"),
+            "width": pixmap.width(),
+            "height": pixmap.height(),
+            "format": image_format.lower(),
+        }
+
+    def _grab_window(window: QWindow):
+        from PySide6.QtQuick import QQuickWindow
+
+        if isinstance(window, QQuickWindow):
+            image = window.grabWindow()
+            if image.isNull():
+                raise ValueError("grabWindow() returned null image")
+            from PySide6.QtGui import QPixmap
+
+            return QPixmap.fromImage(image)
+        screen = window.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            raise ValueError("No screen for window grab")
+        pixmap = screen.grabWindow(window.winId())
+        if pixmap.isNull():
+            raise ValueError("screen.grabWindow() returned null pixmap")
+        return pixmap
+
+    def _visible_qml_windows():
+        windows = [w for w in QGuiApplication.allWindows() if w.isVisible()]
+        return sorted(windows, key=lambda w: w.width() * w.height(), reverse=True)
+
+    def screenshot(**params):
+        try:
+            return orig_screenshot(**params)
+        except ValueError as exc:
+            if "No visible" not in str(exc) and "not a QWidget" not in str(exc):
+                raise
+        windows = _visible_qml_windows()
+        if not windows:
+            raise ValueError("No visible QML/Qt window")
+        window = windows[0]
+        ref = params.get("ref")
+        if ref:
+            obj = probe._registry.resolve_or_raise(ref)
+            if isinstance(obj, QWindow):
+                window = obj
+            else:
+                raise ValueError(f"Ref {ref} is not a QWindow")
+        return _encode_pixmap(
+            _grab_window(window),
+            params.get("format", "png"),
+            int(params.get("quality", 80)),
+            int(params.get("max_width", 1920)),
+            int(params.get("max_height", 1080)),
+        )
+
+    probe._screenshotter.screenshot = screenshot
+
+    orig_snapshot = probe._introspector.snapshot
+
+    def snapshot(**params):
+        result = orig_snapshot(**params)
+        if result.get("widget_count", 0) > 0:
+            return result
+        lines = [result.get("tree", "").strip() or "(no QWidget tree)"]
+        count = 0
+        for window in QGuiApplication.allWindows():
+            if not window.isVisible():
+                continue
+            ref = probe._registry.register(window, prefix="w")
+            title = window.title() or window.objectName() or type(window).__name__
+            lines.append(
+                f"- {type(window).__name__} \"{title}\" "
+                f"[{window.width()}x{window.height()}] [ref={ref}]"
+            )
+            count += 1
+        if count:
+            lines.insert(0, f"QML/Qt windows: {count}")
+        return {
+            "tree": "\n".join(lines),
+            "widget_count": count,
+            "generation": result.get("generation", 0),
+        }
+
+    probe._introspector.snapshot = snapshot
 
 
 def is_admin():
@@ -95,11 +237,19 @@ def main():
         run_as_admin()
         sys.exit()
 
+    if "--no-update" not in sys.argv:
+        try:
+            from updater import check_and_apply_update
+            check_and_apply_update()
+        except Exception as e:
+            log_exception("updater", e)
+
     app_sock = None
     if "--no-single" not in sys.argv:
         app_sock = handle_multiple_instances()
 
     qapp = QApplication(sys.argv)
+    qt_mcp_probe = _install_qt_mcp_probe()
     qapp.setQuitOnLastWindowClosed(False)
     icon_path = resource_path("logo.ico")
     if os.path.exists(icon_path):
@@ -131,6 +281,9 @@ def main():
         print("[REFRAMED] ERREUR : échec du chargement QML", file=sys.stderr)
         sys.exit(1)
 
+    if qt_mcp_probe is not None:
+        _patch_qt_mcp_for_qml(qt_mcp_probe)
+
     root = engine.rootObjects()[0]
     radial_win = root.findChild(QObject, "radialWin", Qt.FindChildOption.FindChildrenRecursively)
     if isinstance(radial_win, QWindow):
@@ -146,9 +299,19 @@ def main():
     def _on_about_to_quit():
         controller.shutdown()
         try:
-            radial._timer.stop()
+            radial.shutdown()
         except Exception:
             pass
+        if app_sock is not None:
+            try:
+                app_sock.close()
+            except OSError:
+                pass
+        try:
+            engine.clearComponentCache()
+        except Exception:
+            pass
+        qapp.processEvents()
     qapp.aboutToQuit.connect(_on_about_to_quit)
 
     # Écoute UDP pour réveiller l'instance existante

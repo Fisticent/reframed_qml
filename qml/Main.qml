@@ -20,13 +20,57 @@ ApplicationWindow {
     property string activeName: ""
     readonly property bool narrowLayout: mainWin.width < 600
 
-    // ---- fenêtres secondaires ----
-    SettingsWindow   { id: settingsWin; objectName: "settingsWin" }
-    TutorialWindow   { id: tutoWin; objectName: "tutoWin" }
-    CharManagerWindow { id: charWin; objectName: "charWin" }
+    // ---- fenêtres secondaires (chargement différé au premier usage) ----
     ToolbarWindow    { id: toolbarWin; objectName: "toolbarWin" }
     RadialMenu       { id: radialWin; objectName: "radialWin" }
     CalibOverlay     { id: calibOverlay; objectName: "calibOverlay" }
+
+    Loader {
+        id: settingsLoader
+        active: false
+        asynchronous: true
+        source: "SettingsWindow.qml"
+        onLoaded: if (item) item.objectName = "settingsWin"
+    }
+    Loader {
+        id: tutoLoader
+        active: false
+        asynchronous: true
+        source: "TutorialWindow.qml"
+        onLoaded: if (item) item.objectName = "tutoWin"
+    }
+    Loader {
+        id: charLoader
+        active: false
+        asynchronous: true
+        source: "CharManagerWindow.qml"
+        onLoaded: if (item) item.objectName = "charWin"
+    }
+
+    function openSettingsWindow() {
+        if (!settingsLoader.active)
+            settingsLoader.active = true
+        if (settingsLoader.item)
+            settingsLoader.item.openSettings()
+        else
+            settingsLoader.loaded.connect(function() { settingsLoader.item.openSettings() }, Qt.SingleShotConnection)
+    }
+    function openTutorialWindow() {
+        if (!tutoLoader.active)
+            tutoLoader.active = true
+        if (tutoLoader.item)
+            tutoLoader.item.openTutorial()
+        else
+            tutoLoader.loaded.connect(function() { tutoLoader.item.openTutorial() }, Qt.SingleShotConnection)
+    }
+    function openCharManagerWindow() {
+        if (!charLoader.active)
+            charLoader.active = true
+        if (charLoader.item)
+            charLoader.item.openManager()
+        else
+            charLoader.loaded.connect(function() { charLoader.item.openManager() }, Qt.SingleShotConnection)
+    }
 
     function syncToolbarVisibility() {
         if (app.toolbarActive)
@@ -37,17 +81,47 @@ ApplicationWindow {
 
     Component.onCompleted: {
         syncToolbarVisibility()
+        restoreGeometry()
+    }
+
+    function clampToVisibleScreen() {
+        var minX = Screen.desktopAvailableX
+        var minY = Screen.desktopAvailableY
+        var maxX = minX + Screen.desktopAvailableWidth - mainWin.width
+        var maxY = minY + Screen.desktopAvailableHeight - mainWin.height
+        if (mainWin.x < minX)
+            mainWin.x = minX
+        if (mainWin.y < minY)
+            mainWin.y = minY
+        if (mainWin.x > maxX)
+            mainWin.x = Math.max(minX, maxX)
+        if (mainWin.y > maxY)
+            mainWin.y = Math.max(minY, maxY)
+    }
+
+    function restoreGeometry() {
+        var sw = app.getStr("window_width")
+        var sh = app.getStr("window_height")
+        if (sw !== "" && sh !== "") {
+            var w = Math.max(mainWin.minimumWidth, Math.min(parseInt(sw), mainWin.maximumWidth))
+            var h = Math.max(mainWin.minimumHeight, Math.min(parseInt(sh), mainWin.maximumHeight))
+            mainWin.width = w
+            mainWin.height = h
+        }
         var sx = app.getStr("window_x")
         var sy = app.getStr("window_y")
         if (sx !== "" && sy !== "") {
             mainWin.x = parseInt(sx)
             mainWin.y = parseInt(sy)
         }
+        clampToVisibleScreen()
     }
 
     function saveGeometry() {
         app.saveValue("window_x", Math.round(mainWin.x))
         app.saveValue("window_y", Math.round(mainWin.y))
+        app.saveValue("window_width", Math.round(mainWin.width))
+        app.saveValue("window_height", Math.round(mainWin.height))
     }
     Timer {
         id: geomTimer; interval: 400; repeat: false
@@ -55,6 +129,8 @@ ApplicationWindow {
     }
     onXChanged: if (mainWin.visible) geomTimer.restart()
     onYChanged: if (mainWin.visible) geomTimer.restart()
+    onWidthChanged: if (mainWin.visible) geomTimer.restart()
+    onHeightChanged: if (mainWin.visible) geomTimer.restart()
 
     onWindowStateChanged: function(state) {
         if (state === Qt.WindowMinimized)
@@ -80,11 +156,22 @@ ApplicationWindow {
     // ---- réactions aux signaux backend ----
     Connections {
         target: app
-        function onRequestShowMain() { mainWin.show(); mainWin.raise(); mainWin.requestActivate() }
+        function onRequestShowMain() { app.refresh(); mainWin.show(); mainWin.raise(); mainWin.requestActivate() }
         function onRequestHideMain() { mainWin.saveGeometry(); mainWin.hide(); mainWin.syncToolbarVisibility() }
-        function onRequestToggleMain() { mainWin.visible ? mainWin.hide() : (mainWin.show(), mainWin.raise(), mainWin.requestActivate()) }
-        function onRequestQuit() { Qt.quit() }
-        function onLaunchTutorialRequested() { tutoWin.openTutorial() }
+        function onRequestToggleMain() {
+            if (mainWin.visible) {
+                mainWin.saveGeometry()
+                mainWin.hide()
+                mainWin.syncToolbarVisibility()
+            } else {
+                app.refresh()
+                mainWin.show()
+                mainWin.raise()
+                mainWin.requestActivate()
+            }
+        }
+        function onRequestQuit() { mainWin.saveGeometry(); Qt.quit() }
+        function onLaunchTutorialRequested() { mainWin.openTutorialWindow() }
         function onConflictDetected() { conflictDialog.open() }
         function onHotkeyCaptured(key, value) { app.applyHotkey(key, value) }
         function onActiveHighlightChanged(name) { mainWin.activeName = name }
@@ -203,7 +290,7 @@ ApplicationWindow {
                         baseColor: Colors.secondary
                         hoverColor: Colors.secondary_hover
                         tooltipText: "Paramètres du jeu et de la roue"
-                        onClicked: settingsWin.openSettings()
+                        onClicked: mainWin.openSettingsWindow()
                     }
                     ThemedButton {
                         text: "Cacher l'UI"
@@ -309,13 +396,58 @@ ApplicationWindow {
                         color: Colors.text_muted
                         font.pixelSize: Colors.font_size_secondary
                     }
+                    component RecalibButton: Button {
+                        id: recalibBtn
+                        property bool calibDone: false
+                        property string tip: ""
+                        visible: calibDone
+                        implicitWidth: 22
+                        implicitHeight: 34
+                        hoverEnabled: true
+                        focusPolicy: Qt.StrongFocus
+                        ToolTip.visible: hovered && app.showTooltips
+                        ToolTip.text: recalibBtn.tip
+                        ToolTip.delay: 400
+                        contentItem: Text {
+                            text: "↻"
+                            color: Colors.text
+                            font.pixelSize: 15
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: Colors.radius_control
+                            color: recalibBtn.hovered ? Colors.secondary_hover : Colors.secondary
+                        }
+                    }
                     RowLayout {
                         Layout.fillWidth: true
-                        spacing: 6
+                        spacing: 4
                         CalibChip { Layout.fillWidth: true; calibKey: "chat"; label: "Chat"; onTriggered: app.startCalibChat() }
+                        RecalibButton {
+                            calibDone: app.calibStates.chat === true
+                            tip: "Recalibrer le Chat"
+                            onClicked: app.startCalibChat()
+                        }
                         CalibChip { Layout.fillWidth: true; calibKey: "xp"; label: "XP/Drop"; onTriggered: app.startCalibXpDrop() }
+                        RecalibButton {
+                            calibDone: app.calibStates.xp === true
+                            tip: "Recalibrer XP/Drop"
+                            onClicked: app.startCalibXpDrop()
+                        }
                         CalibChip { Layout.fillWidth: true; calibKey: "zaap"; label: "Havre-Sac"; onTriggered: app.startCalibZaap() }
+                        RecalibButton {
+                            calibDone: app.calibStates.zaap !== "none"
+                            tip: "Forcer la recalibration complète du Zaap (efface les positions enregistrées)"
+                            onClicked: app.forceRecalibZaap()
+                        }
                         CalibChip { Layout.fillWidth: true; calibKey: "invite"; label: "Invitation"; onTriggered: app.startCalibGroupAccept() }
+                        RecalibButton {
+                            calibDone: app.calibStates.invite === true
+                            tip: "Recalibrer l'Invitation"
+                            onClicked: app.startCalibGroupAccept()
+                        }
                     }
                 }
             }
@@ -328,12 +460,12 @@ ApplicationWindow {
                 ThemedButton {
                     Layout.fillWidth: true
                     text: "Inviter groupe"
-                    enabled: app.canGroupInvite()
+                    enabled: app.groupInviteReady
                     baseColor: Colors.primary_button
                     hoverColor: Colors.primary_button_hover
-                    tooltipText: app.canGroupInvite()
+                    tooltipText: app.groupInviteReady
                         ? "Auto-invitation de l'équipe via le chat"
-                        : "Calibre le chat et définis un chef de groupe"
+                        : app.groupInviteCalibHint()
                     onClicked: app.groupInvite()
                 }
                 ThemedButton {
@@ -578,7 +710,7 @@ ApplicationWindow {
                 HotkeyButton { compact: true; configKey: "toggle_app_key"; labelText: "UI"; tooltipText: "Masquer/Afficher l'app" }
                 HotkeyButton { compact: true; configKey: "sync_key"; labelText: "Clic G."; tooltipText: "Clic gauche synchronisé" }
                 HotkeyButton { compact: true; configKey: "sync_right_key"; labelText: "Clic D."; tooltipText: "Clic droit synchronisé" }
-                HotkeyButton { compact: true; configKey: "swap_xp_drop_key"; labelText: "Swap"; macroEnabled: app.canSwapXp(); tooltipText: app.canSwapXp() ? "Clic synchro (XP/Drop)" : "Calibre XP/Drop d'abord" }
+                HotkeyButton { compact: true; configKey: "swap_xp_drop_key"; labelText: "Swap"; macroEnabled: app.swapXpReady; tooltipText: app.swapXpReady ? "Clic synchro (XP/Drop)" : "Calibre XP/Drop d'abord" }
             }
         }
     }

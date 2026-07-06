@@ -4,7 +4,7 @@ import os
 import shutil
 import sys
 
-from constants import get_app_dir, log_exception
+from constants import get_app_dir, log_exception, sanitize_blocked_mouse_hotkeys
 
 
 def default_settings_data():
@@ -28,7 +28,7 @@ def default_settings_data():
         "game_spell_key": "s",
         "game_haven_key": "h",
         "radial_menu_active": True,
-        "radial_menu_hotkey": "alt+left_click",
+        "radial_menu_hotkey": "middle_click",
         "leader_name": "",
         "accounts_state": {},
         "accounts_team": {},
@@ -65,17 +65,22 @@ def default_settings_data():
         "toolbar_y": 100,
         "window_x": None,
         "window_y": None,
+        "window_width": None,
+        "window_height": None,
         "volume_level": 50,
         "ignore_organizer_warning": False,
     }
 
 
 def get_settings_dir():
-    """Dossier de settings : AppData (exe) ou racine projet (dev)."""
-    if getattr(sys, "frozen", False):
-        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-        return os.path.join(base, "Reframed")
-    return get_app_dir()
+    """Dossier de settings : AppData par défaut (exe et dev partagent le même fichier)."""
+    custom = os.environ.get("REFRAMED_SETTINGS_DIR")
+    if custom:
+        return custom
+    if os.environ.get("REFRAMED_PORTABLE") == "1":
+        return get_app_dir()
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return os.path.join(base, "Reframed")
 
 
 def default_settings_path():
@@ -185,8 +190,23 @@ class Config:
                 with open(self.filename, "r", encoding="utf-8") as f:
                     loaded = json.load(f)
                     self.data.update(loaded)
+                from constants import sanitize_blocked_mouse_hotkeys
+                if sanitize_blocked_mouse_hotkeys(self.data):
+                    self.save()
+                self._migrate_legacy_accounts_state()
             except Exception as e:
                 log_exception(f"lecture {self.filename}", e)
+
+    def _migrate_legacy_accounts_state(self):
+        """Anciens profils sans accounts_state : tous les persos connus restent actifs."""
+        state = self.data.get("accounts_state")
+        if state:
+            return
+        order = self.data.get("custom_order") or []
+        if not order:
+            return
+        self.data["accounts_state"] = {name: True for name in order}
+        self.save()
 
     def save(self):
         try:

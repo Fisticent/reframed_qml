@@ -24,6 +24,8 @@ Window {
     property bool showHavre: app.getStr("overlay_show_havre") === "" ? true : app.getBool("overlay_show_havre")
     property bool showZaap: app.getStr("overlay_show_zaap") === "" ? true : app.getBool("overlay_show_zaap")
     property bool showInvite: app.getStr("overlay_show_invite") === "" ? true : app.getBool("overlay_show_invite")
+    readonly property bool zaapReady: app.autoZaapReady
+    readonly property bool inviteReady: app.groupInviteReady
 
     function refreshFlags() {
         showInv = app.getStr("overlay_show_inv") === "" ? true : app.getBool("overlay_show_inv")
@@ -93,6 +95,19 @@ Window {
         radius: Colors.radius_control
         border.width: 1
         border.color: Colors.secondary
+        layer.enabled: true
+        layer.smooth: true
+
+        MouseArea {
+            anchors.fill: parent
+            z: -1
+            cursorShape: Qt.SizeAllCursor
+            onPressed: bar.startSystemMove()
+            onReleased: {
+                app.saveValue("toolbar_x", Math.round(bar.x))
+                app.saveValue("toolbar_y", Math.round(bar.y))
+            }
+        }
 
         ColumnLayout {
             id: col
@@ -110,15 +125,6 @@ Window {
                     color: Colors.text
                     font.pixelSize: 9
                     font.bold: true
-                }
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.SizeAllCursor
-                    onPressed: bar.startSystemMove()
-                    onReleased: {
-                        app.saveValue("toolbar_x", Math.round(bar.x))
-                        app.saveValue("toolbar_y", Math.round(bar.y))
-                    }
                 }
             }
 
@@ -205,16 +211,16 @@ Window {
                 }
                 MacroButton {
                     visible: bar.showZaap
-                    enabled: app.canAutoZaap()
+                    enabled: bar.zaapReady
                     iconSource: app.assetUrl("skin/zaap.png"); fallback: "Z"
-                    tip: app.canAutoZaap() ? "Auto-Zaap" : "Calibrez tous les Zaaps"
+                    tip: bar.zaapReady ? "Auto-Zaap" : app.zaapCalibHint()
                     onClicked: app.autoZaap()
                 }
                 MacroButton {
                     visible: bar.showInvite
-                    enabled: app.canGroupInvite()
+                    enabled: bar.inviteReady
                     iconSource: app.assetUrl("skin/invite.png"); fallback: "G"
-                    tip: app.canGroupInvite() ? "Invitation de Groupe" : "Chat calibré + chef requis"
+                    tip: bar.inviteReady ? "Invitation de Groupe" : app.groupInviteCalibHint()
                     onClicked: app.groupInvite()
                 }
             }

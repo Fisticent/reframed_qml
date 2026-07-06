@@ -26,7 +26,7 @@ Button {
 
     ToolTip.visible: hovered && (typeof app !== "undefined" ? app.showTooltips : true)
     ToolTip.text: done ? (label + " calibré")
-               : partial ? (label + " : calibration partielle")
+               : partial ? app.zaapCalibHint()
                : ("Calibrer " + label)
     ToolTip.delay: 400
 

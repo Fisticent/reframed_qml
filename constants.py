@@ -2,6 +2,9 @@ import sys
 import os
 import ctypes
 
+APP_VERSION = "1.0.0"
+GITHUB_REPO = "Fisticent/reframed_qml"
+
 
 def get_app_dir():
     """Répertoire de l'exe (PyInstaller) ou du projet (dev)."""
@@ -20,6 +23,32 @@ def resource_path(relative_path):
 
 def log_exception(context, exc):
     print(f"[REFRAMED] {context}: {exc}", file=sys.stderr)
+
+
+BLOCKED_MOUSE_HOTKEY_PARTS = frozenset({"left_click", "right_click"})
+BLOCKED_MOUSE_HOTKEY_MSG = (
+    "⚠️ Clic gauche et clic droit sont interdits comme raccourcis "
+    "(conflits avec le jeu). Utilisez une touche clavier ou la molette."
+)
+
+
+def hotkey_uses_blocked_mouse(value):
+    if not value or not isinstance(value, str):
+        return False
+    parts = {p.strip().lower() for p in value.split("+") if p.strip()}
+    return bool(parts & BLOCKED_MOUSE_HOTKEY_PARTS)
+
+
+def sanitize_blocked_mouse_hotkeys(data):
+    """Retire les raccourcis clic G/D au chargement (anciens profils)."""
+    changed = False
+    for key, value in list(data.items()):
+        if not (key.endswith("_key") or key.endswith("_hotkey")):
+            continue
+        if hotkey_uses_blocked_mouse(value):
+            data[key] = ""
+            changed = True
+    return changed
 
 
 COLORS = {

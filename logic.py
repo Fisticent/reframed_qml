@@ -127,6 +127,11 @@ class ShellHookListener:
 
     def stop(self):
         self._stop_event.set()
+        if self.hwnd:
+            try:
+                win32gui.PostMessage(self.hwnd, win32con.WM_CLOSE, 0, 0)
+            except Exception as e:
+                log_exception("ShellHook PostMessage", e)
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2.0)
 
@@ -252,26 +257,35 @@ class DofusLogic:
         if self.error_callback:
             self.error_callback(msg)
 
+    def _account_is_active(self, pseudo):
+        """Actif par défaut à la première détection ; l'utilisateur peut décocher (mémorisé dans accounts_state)."""
+        return bool(self.config.data.get("accounts_state", {}).get(pseudo, True))
+
     def scan_slots(self):
         windows_trouvees = []
+        self.last_scan_debug = {"dofus_windows": [], "skipped_titles": []}
 
         def enum_windows_callback(hwnd, extra):
             if win32gui.IsWindowVisible(hwnd):
                 class_name = win32gui.GetClassName(hwnd)
-                # On accepte Unity, Flash (Apollo) et d'autres variants possibles
+                titre = win32gui.GetWindowText(hwnd)
                 if class_name in ["UnityWndClass", "ApolloRuntimeContentWindow", "Dofus"]:
-                    titre = win32gui.GetWindowText(hwnd)
                     if titre.strip():
                         windows_trouvees.append((hwnd, titre))
+                        self.last_scan_debug["dofus_windows"].append(
+                            {"class": class_name, "title": titre[:80]}
+                        )
             return True
 
         win32gui.EnumWindows(enum_windows_callback, None)
 
         dirty = False
         nouveaux_comptes = []
+        leader_name = self.config.data.get("leader_name", "")
         for hwnd, titre in windows_trouvees:
             titre_clean = titre.strip()
             if titre_clean.lower().startswith("dofus") or not titre_clean:
+                self.last_scan_debug["skipped_titles"].append(titre_clean[:80])
                 continue
             parts = titre_clean.split(" - ")
             pseudo = parts[0].strip()
@@ -279,7 +293,14 @@ class DofusLogic:
             if self.config.data["classes"].get(pseudo) != classe:
                 self.config.data["classes"][pseudo] = classe
                 dirty = True
-            etat_actif = self.config.data["accounts_state"].get(pseudo, True)
+            etat_actif = self._account_is_active(pseudo)
+            if pseudo not in self.config.data.get("accounts_state", {}):
+                self.config.data.setdefault("accounts_state", {})[pseudo] = etat_actif
+                dirty = True
+            if not etat_actif and leader_name and pseudo == leader_name:
+                etat_actif = True
+                self.config.data.setdefault("accounts_state", {})[pseudo] = True
+                dirty = True
             equipe = self.config.data["accounts_team"].get(pseudo, "Team 1")
             nouveaux_comptes.append(
                 {
@@ -423,6 +444,7 @@ class DofusLogic:
     def set_leader(self, name):
         self.leader_hwnd = None
         self.config.data["leader_name"] = name
+        self.config.data.setdefault("accounts_state", {})[name] = True
         self.config.save()
         for acc in self.all_accounts:
             if acc["name"] == name:

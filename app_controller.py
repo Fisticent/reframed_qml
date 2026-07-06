@@ -24,7 +24,16 @@ import win32gui
 from PySide6.QtCore import QObject, Signal, Slot, Property, QTimer, QUrl, Qt
 from PySide6.QtWidgets import QMessageBox
 
-from constants import resource_path, AZERTY_TO_SCAN, SCAN_TO_AZERTY, log_exception, COLORS as C
+from constants import (
+    resource_path,
+    AZERTY_TO_SCAN,
+    SCAN_TO_AZERTY,
+    log_exception,
+    COLORS as C,
+    BLOCKED_MOUSE_HOTKEY_PARTS,
+    BLOCKED_MOUSE_HOTKEY_MSG,
+    hotkey_uses_blocked_mouse,
+)
 from config_manager import Config
 from logic import DofusLogic
 
@@ -122,6 +131,7 @@ class AppController(QObject):
         self.currentIndexChanged.connect(self._apply_current_idx)
 
         self._listener_thread = None
+        self._shutdown_done = False
 
     # ======================================================================
     #  Démarrage / cycle de vie
@@ -222,16 +232,22 @@ class AppController(QObject):
 
     isListening = Property(bool, _get_is_listening, notify=listeningChanged)
 
+    def _zaap_missing_accounts(self):
+        zaaps = self.config.data.get("macro_positions", {}).get("zaaps", {}) or {}
+        return [a["name"] for a in self.logic.get_cycle_list() if a["name"] not in zaaps]
+
     def _get_calib(self):
         macro = self.config.data.get("macro_positions", {})
         zaaps = macro.get("zaaps", {}) or {}
         active = self.logic.get_cycle_list()
-        if zaaps and len(zaaps) >= len(active) and len(active) > 0:
-            zaap_state = "full"
-        elif zaaps:
-            zaap_state = "partial"
-        else:
+        active_names = [a["name"] for a in active]
+        missing = [n for n in active_names if n not in zaaps]
+        if not active_names:
             zaap_state = "none"
+        elif not missing:
+            zaap_state = "full"
+        else:
+            zaap_state = "partial"
         return {
             "chat": bool(macro.get("chat_position")),
             "xp": bool(macro.get("xp_drop_button")),
@@ -241,18 +257,59 @@ class AppController(QObject):
 
     calibStates = Property("QVariantMap", _get_calib, notify=calibChanged)
 
+    def _get_auto_zaap_ready(self):
+        return self._get_calib().get("zaap") == "full"
+
+    autoZaapReady = Property(bool, _get_auto_zaap_ready, notify=calibChanged)
+
+    def _get_group_invite_ready(self):
+        c = self._get_calib()
+        return (
+            bool(c.get("chat"))
+            and bool(self.config.data.get("leader_name"))
+            and bool(self.logic.leader_hwnd)
+        )
+
+    groupInviteReady = Property(bool, _get_group_invite_ready, notify=calibChanged)
+
+    def _get_swap_xp_ready(self):
+        return bool(self._get_calib().get("xp"))
+
+    swapXpReady = Property(bool, _get_swap_xp_ready, notify=calibChanged)
+
     @Slot(result=bool)
     def canGroupInvite(self):
-        c = self._get_calib()
-        return bool(c.get("chat")) and bool(self.config.data.get("leader_name"))
+        return self.groupInviteReady
 
     @Slot(result=bool)
     def canAutoZaap(self):
-        return self._get_calib().get("zaap") == "full"
+        return self.autoZaapReady
+
+    @Slot(result=str)
+    def groupInviteCalibHint(self):
+        if not self.config.data.get("leader_name"):
+            return "Définissez un chef de groupe"
+        if not self._get_calib().get("chat"):
+            return "Calibrez le chat d'abord"
+        if not self.logic.leader_hwnd:
+            return "Ouvrez la fenêtre du chef puis F5"
+        return "Invitation de Groupe"
+
+    @Slot(result=str)
+    def zaapCalibHint(self):
+        active = self.logic.get_cycle_list()
+        if not active:
+            return "Aucun compte actif — ouvrez Dofus puis F5 (ou cochez vos persos)"
+        if self._get_calib().get("zaap") == "full":
+            return "Auto-Zaap"
+        missing = self._zaap_missing_accounts()
+        if missing:
+            return "Calibrez le zaap pour : " + ", ".join(missing)
+        return "Calibrez le Havre-Sac de chaque compte actif"
 
     @Slot(result=bool)
     def canSwapXp(self):
-        return bool(self._get_calib().get("xp"))
+        return self.swapXpReady
 
     def _get_colors(self):
         return dict(C)
@@ -503,6 +560,9 @@ class AppController(QObject):
 
     def shutdown(self):
         """Arrêt propre : stoppe le listener et les hooks avant destruction Qt."""
+        if self._shutdown_done:
+            return
+        self._shutdown_done = True
         self._running = False
         try:
             keyboard.unhook_all()
@@ -513,13 +573,20 @@ class AppController(QObject):
         except Exception as e:
             log_exception("shutdown shell hook", e)
         try:
+            if self.radial:
+                self.radial.shutdown()
+        except Exception as e:
+            log_exception("shutdown radial", e)
+        try:
             if self.tray_icon:
                 self.tray_icon.hide()
+                self.tray_icon.setVisible(False)
+                self.tray_icon.deleteLater()
+                self.tray_icon = None
         except Exception as e:
             log_exception("shutdown tray", e)
-        # laisse le thread listener sortir de sa boucle (sleep 0.01)
         if self._listener_thread and self._listener_thread.is_alive():
-            self._listener_thread.join(timeout=0.3)
+            self._listener_thread.join(timeout=1.0)
 
     # ======================================================================
     #  Vérif logiciel concurrent (Organizer)
@@ -586,7 +653,7 @@ class AppController(QObject):
         return True
 
     def register_action(self, hk_str, func):
-        if not hk_str:
+        if not hk_str or hotkey_uses_blocked_mouse(hk_str):
             return
         parts = hk_str.lower().split("+")
         if "click" in hk_str or "mouse" in hk_str:
@@ -895,6 +962,7 @@ class AppController(QObject):
                     captured_mods = get_current_mods()
                     captured_key = SCAN_TO_AZERTY.get(e.scan_code, e.name)
             hook = keyboard.hook(on_key, suppress=True)
+            blocked_mouse_warned = False
             while not captured_key:
                 if win32api.GetAsyncKeyState(win32con.VK_LBUTTON) < 0:
                     captured_key = "left_click"
@@ -906,7 +974,12 @@ class AppController(QObject):
                     captured_key = "mouse4"
                 elif win32api.GetAsyncKeyState(0x06) < 0:
                     captured_key = "mouse5"
-                if captured_key:
+                if captured_key in BLOCKED_MOUSE_HOTKEY_PARTS:
+                    if not blocked_mouse_warned:
+                        self.show_temporary_message(BLOCKED_MOUSE_HOTKEY_MSG, C["warning"])
+                        blocked_mouse_warned = True
+                    captured_key = None
+                elif captured_key:
                     captured_mods = get_current_mods()
                     break
                 time.sleep(0.01)
@@ -924,6 +997,12 @@ class AppController(QObject):
     @Slot(str, str)
     def applyHotkey(self, config_key, new_value):
         self.release_modifiers()
+        if new_value and hotkey_uses_blocked_mouse(new_value):
+            self.show_temporary_message(BLOCKED_MOUSE_HOTKEY_MSG, C["warning"])
+            self._is_listening = False
+            self.listeningChanged.emit()
+            self.hotkeysChanged.emit()
+            return
         if new_value:
             for k in list(self.config.data.keys()):
                 if (k.endswith("_key") or k.endswith("_hotkey")) and k != config_key:
@@ -1036,18 +1115,40 @@ class AppController(QObject):
     @Slot()
     def startCalibZaap(self):
         active_accounts = self.logic.get_cycle_list()
+        zaaps = self.config.data.get("macro_positions", {}).get("zaaps", {}) or {}
+        to_calibrate = [a for a in active_accounts if a["name"] not in zaaps]
         if not active_accounts:
             self.show_temporary_message("⚠️ Aucun compte actif à calibrer.", C["warning"])
             return
+        if not to_calibrate:
+            self.show_temporary_message(
+                "✅ Tous les comptes actifs ont déjà un zaap calibré.", C["primary_bright"])
+            self.calibChanged.emit()
+            return
+        if not self._begin_calib():
+            return
+        threading.Thread(target=self._calib_zaap_sequence,
+                         args=(to_calibrate,), daemon=True).start()
+
+    @Slot()
+    def forceRecalibZaap(self):
+        """Efface les positions Zaap enregistrées et relance la calibration pour tous les comptes actifs."""
+        active_accounts = self.logic.get_cycle_list()
+        if not active_accounts:
+            self.show_temporary_message("⚠️ Aucun compte actif à calibrer.", C["warning"])
+            return
+        self.config.data.setdefault("macro_positions", {})["zaaps"] = {}
+        self.config.save()
+        self.calibChanged.emit()
         if not self._begin_calib():
             return
         threading.Thread(target=self._calib_zaap_sequence,
                          args=(active_accounts,), daemon=True).start()
 
     def _calib_zaap_sequence(self, active_accounts):
-        new_zaaps = {}
-        success = True
         k = self._calib_key_label()
+        zaaps = self.config.data.setdefault("macro_positions", {}).setdefault("zaaps", {})
+        calibrated_any = False
         for acc in active_accounts:
             self.logic.focus_window(acc["hwnd"])
             time.sleep(0.2)
@@ -1055,16 +1156,26 @@ class AppController(QObject):
                 f"Allez dans le havre-sac de {acc['name']}, placez la souris sur le haut du "
                 f"Zaap, puis appuyez sur {k}.\n(Échap pour annuler)")
             if not self._wait_for_calib_or_esc():
-                self.show_temporary_message("❌ Calibration Zaap annulée.", C["danger_hover"])
-                success = False
-                break
+                missing = [a["name"] for a in active_accounts if a["name"] not in zaaps]
+                if calibrated_any:
+                    self.config.save()
+                    self.calibChanged.emit()
+                if missing:
+                    self.show_temporary_message(
+                        f"⚠️ Calibration interrompue. Manque : {', '.join(missing)}",
+                        C["warning"],
+                    )
+                else:
+                    self.show_temporary_message("❌ Calibration Zaap annulée.", C["danger_hover"])
+                self._end_calib()
+                return
             rx, ry = self.logic.get_relative_ratio_pos(acc["hwnd"])
-            new_zaaps[acc["name"]] = [rx, ry]
-            self.show_temporary_message(f"✅ Zaap de {acc['name']} calibré !", C["primary_bright"])
-        if success:
-            self.config.data["macro_positions"]["zaaps"] = new_zaaps
+            zaaps[acc["name"]] = [rx, ry]
             self.config.save()
-            self.show_temporary_message("✅ Calibration Zaap totale terminée !", C["primary_bright"])
+            calibrated_any = True
+            self.calibChanged.emit()
+            self.show_temporary_message(f"✅ Zaap de {acc['name']} calibré !", C["primary_bright"])
+        self.show_temporary_message("✅ Calibration Zaap totale terminée !", C["primary_bright"])
         self._end_calib()
 
     # ======================================================================

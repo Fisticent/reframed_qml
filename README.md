@@ -37,6 +37,22 @@ py -3 main.py --no-admin --no-single
 | `--no-admin` | ne demande pas l'élévation UAC (dev) |
 | `--no-single` | désactive le verrou d'instance unique (dev) |
 | `--selftest` | lance l'UI réelle puis se ferme après 2,5 s (CI/validation) |
+| `--qt-mcp` | active le probe [qt-mcp](https://github.com/0xCarbon/qt-mcp) (localhost:9142) |
+
+## Inspection UI avec qt-mcp (Cursor)
+
+Permet à l'agent de capturer l'arbre Qt, des screenshots et d'interagir avec l'UI en dev.
+
+```powershell
+pip install -r requirements-dev.txt
+.\run_dev.bat
+```
+
+`run_dev.bat` définit `QT_MCP_PROBE=1` et passe `--qt-mcp`. Le serveur MCP est décrit dans `.cursor/mcp.json` — active **qt-mcp** dans Cursor (Settings → MCP) puis relance l'app.
+
+Outils utiles côté agent : `qt_snapshot`, `qt_find_widget`, `qt_screenshot`, `qt_click`.
+
+> Note : l'UI est surtout QML (`QQmlApplicationEngine`) ; le snapshot couvre surtout les widgets Qt natifs (fenêtre, tray). Les screenshots restent le meilleur moyen de valider le rendu QML.
 
 ## Tests
 
@@ -85,13 +101,24 @@ thread-safe) — équivalent du `root.after()` de la version Tkinter.
 
 ## Build de l'exe
 
+**Recommandé (démarrage rapide)** — build onedir :
+
 ```powershell
 pip install -r requirements.txt pyinstaller
-pyinstaller Reframed.spec
+.\build_onedir.bat
 ```
 
-Résultat : `dist\Reframed.exe`. Les settings sont écrits dans
-`%LOCALAPPDATA%\Reframed\settings.json` (mode exe).
+Résultat : `dist\Reframed\Reframed.exe` (+ DLL à côté). Zipper le dossier `dist\Reframed\` pour distribuer.
+
+**Option onefile** (un seul `.exe`, plus lent au lancement) :
+
+```powershell
+.\build_onefile.bat
+```
+
+→ `dist\Reframed.exe`
+
+Les settings sont écrits dans `%LOCALAPPDATA%\Reframed\settings.json` (mode exe).
 
 ## Avertissement
 
