@@ -71,7 +71,7 @@ moindre warning QML apparaît.
 | `main.py` | Entrée : QApplication, UAC, instance unique, moteur QML, tray, câblage |
 | `app_controller.py` | Pont QObject↔QML : hotkeys, background listener, calibrations, tray, propriétés/slots/signals |
 | `radial_controller.py` | État + polling curseur + sons de la roue radiale |
-| `logic.py` | Logique Dofus pure Win32 (**identique à l'original**) |
+| `logic.py` | Logique pure Win32 (**identique à l'original**) |
 | `config_manager.py` | Chargement/sauvegarde settings (**identique à l'original**) |
 | `constants.py` | Couleurs (`COLORS`), mapping AZERTY, chemins ressources — **source de vérité UI** |
 | `DESIGN.md` | Tokens, composants et règles de contraste |
@@ -122,7 +122,7 @@ Les settings sont écrits dans `%LOCALAPPDATA%\Reframed\settings.json` (mode exe
 
 ## Avertissement
 
-L'automatisation de jeu peut enfreindre les CGU d'Ankama / Dofus. À vos risques.
+L'automatisation de jeu peut enfreindre les CGU  / . À vos risques.
 
 ## Stack
 
