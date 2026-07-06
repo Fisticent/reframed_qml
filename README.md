@@ -1,6 +1,6 @@
 # REFRAMED — édition PySide6 / QML
 
-Réécriture de **REFRAMED** (gestionnaire multi-comptes Dofus, Windows) avec une
+Réécriture de **REFRAMED** (gestionnaire multi-comptes, Windows) avec une
 interface **PySide6 + QML** à la place de CustomTkinter. Mêmes fonctionnalités,
 look moderne, transparence/anti-aliasing natifs et DPI géré par Qt6.
 
