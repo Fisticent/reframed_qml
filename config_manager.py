@@ -38,6 +38,7 @@ def default_settings_data():
         "classes": {},
         "auto_accept_trade": False,
         "auto_group_accept": False,
+        "auto_refresh_windows": True,
         "custom_order": [],
         "macro_positions": {
             "chat_position": None,

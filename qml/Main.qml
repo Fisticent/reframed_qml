@@ -341,24 +341,11 @@ ApplicationWindow {
             spacing: 8
 
             // ---------- PILOTAGE : raccourcis + options ----------
-            ColumnLayout {
-                visible: mainWin.narrowLayout
+            PilotageShortcutsCard {
                 Layout.fillWidth: true
                 Layout.topMargin: 8
-                Layout.leftMargin: 15; Layout.rightMargin: 15
-                spacing: 8
-                PilotageShortcutsCard { Layout.fillWidth: true }
-                OptionsCard { Layout.fillWidth: true }
-            }
-
-            RowLayout {
-                visible: !mainWin.narrowLayout
-                Layout.fillWidth: true
-                Layout.topMargin: 8
-                Layout.leftMargin: 15; Layout.rightMargin: 15
-                spacing: 8
-                PilotageShortcutsCard { Layout.fillWidth: true; Layout.alignment: Qt.AlignTop }
-                OptionsCard { Layout.preferredWidth: 200; Layout.alignment: Qt.AlignTop }
+                Layout.leftMargin: 15
+                Layout.rightMargin: 15
             }
 
             // ---------- CALIBRAGES (état visible) ----------
@@ -641,7 +628,8 @@ ApplicationWindow {
             }
         }
     }
-        }
+    }
+    }
 
     // ===================================================================
     //  Cartes pilotage réutilisables
@@ -657,7 +645,7 @@ ApplicationWindow {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.margins: 10
-            spacing: 6
+            spacing: 8
 
             RowLayout {
                 Layout.fillWidth: true
@@ -712,21 +700,13 @@ ApplicationWindow {
                 HotkeyButton { compact: true; configKey: "sync_right_key"; labelText: "Clic D."; tooltipText: "Clic droit synchronisé" }
                 HotkeyButton { compact: true; configKey: "swap_xp_drop_key"; labelText: "Swap"; macroEnabled: app.swapXpReady; tooltipText: app.swapXpReady ? "Clic synchro (XP/Drop)" : "Calibre XP/Drop d'abord" }
             }
-        }
-    }
 
-    component OptionsCard: Rectangle {
-        color: Colors.bg_card
-        radius: Colors.radius_card
-        implicitHeight: optBody.implicitHeight + 24
-
-        ColumnLayout {
-            id: optBody
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: 12
-            spacing: 6
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.topMargin: 2
+                height: 1
+                color: Colors.secondary
+            }
 
             Text {
                 text: "Options rapides"
@@ -735,38 +715,56 @@ ApplicationWindow {
                 font.bold: true
             }
 
-            ThemedSwitch {
-                text: "Overlay"
-                checked: app.toolbarActive
-                tooltipText: "Barre de macros flottante en jeu"
-                onToggled: { app.saveBool("toolbar_active", checked); mainWin.syncToolbarVisibility() }
-            }
-            ThemedSwitch {
-                text: "Focus chef"
-                checked: app.returnToLeader
-                tooltipText: "Retour auto sur le chef après une action multi"
-                onToggled: app.saveBool("return_to_leader", checked)
-            }
-            ThemedSwitch {
-                text: "Spam clic"
-                checked: app.spamClick
-                tooltipText: "Maintenir la molette pour spammer les doubles clics"
-                onToggled: app.saveBool("spam_click_active", checked)
-            }
-            ThemedSwitch {
-                text: "Auto-invite"
-                checked: app.autoInvite
-                tooltipText: "Accepter automatiquement sur les alts après Inviter groupe"
-                onToggled: app.saveBool("auto_group_accept", checked)
-            }
-            ThemedSwitch {
-                text: "Auto-échange"
-                checked: app.autoTrade
-                tooltipText: "Accepter auto les demandes d'échange"
-                onToggled: { app.saveBool("auto_accept_trade", checked); app.onAutoTradeChange() }
+            GridLayout {
+                columns: mainWin.narrowLayout ? 1 : 2
+                rowSpacing: 4
+                columnSpacing: 12
+                Layout.fillWidth: true
+
+                ThemedSwitch {
+                    Layout.fillWidth: true
+                    text: "Overlay"
+                    checked: app.toolbarActive
+                    tooltipText: "Barre de macros flottante en jeu"
+                    onToggled: { app.saveBool("toolbar_active", checked); mainWin.syncToolbarVisibility() }
+                }
+                ThemedSwitch {
+                    Layout.fillWidth: true
+                    text: "Focus chef"
+                    checked: app.returnToLeader
+                    tooltipText: "Retour auto sur le chef après une action multi"
+                    onToggled: app.saveBool("return_to_leader", checked)
+                }
+                ThemedSwitch {
+                    Layout.fillWidth: true
+                    text: "Spam clic"
+                    checked: app.spamClick
+                    tooltipText: "Maintenir le clic du milieu (bouton sous la molette) pour spammer les doubles clics"
+                    onToggled: app.saveBool("spam_click_active", checked)
+                }
+                ThemedSwitch {
+                    Layout.fillWidth: true
+                    text: "Auto-invite"
+                    checked: app.autoInvite
+                    tooltipText: "Accepter automatiquement sur les alts après Inviter groupe"
+                    onToggled: app.saveBool("auto_group_accept", checked)
+                }
+                ThemedSwitch {
+                    Layout.fillWidth: true
+                    text: "Auto-échange"
+                    checked: app.autoTrade
+                    tooltipText: "Accepter auto les demandes d'échange"
+                    onToggled: { app.saveBool("auto_accept_trade", checked); app.onAutoTradeChange() }
+                }
+                ThemedSwitch {
+                    Layout.fillWidth: true
+                    text: "Auto-refresh"
+                    checked: app.autoRefreshWindows
+                    tooltipText: "Actualise la liste quand une fenêtre Dofus s'ouvre (max 1 min)"
+                    onToggled: { app.saveBool("auto_refresh_windows", checked); app.onAutoWindowRefreshChange() }
+                }
             }
         }
-    }
     }
 
     // ===================================================================

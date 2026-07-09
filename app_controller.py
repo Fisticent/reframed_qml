@@ -35,7 +35,11 @@ from constants import (
     hotkey_uses_blocked_mouse,
 )
 from config_manager import Config
-from logic import DofusLogic
+from logic import DofusLogic, is_dofus_window_hwnd, is_recognized_dofus_character_title
+
+
+AUTO_REFRESH_WATCH_SEC = 60.0
+AUTO_REFRESH_POLL_MS = 2000
 
 
 def _skin_url(classe):
@@ -100,12 +104,14 @@ class AppController(QObject):
     calibInstruction = Signal(str)              # texte consigne calibrage
     calibInstructionHide = Signal()
     currentIndexChanged = Signal(int)           # thread-safe : index cycle depuis listener
+    dofusWindowEvent = Signal(int, bool)         # hwnd, created — shell hook → thread GUI
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.config = Config()
         self.logic = DofusLogic(self.config)
         self.logic.set_error_callback(self._on_logic_error)
+        self.logic.window_event_callback = self._enqueue_dofus_window_event
 
         self._running = True
         self._current_idx = 0
@@ -113,6 +119,7 @@ class AppController(QObject):
         self._feedback_text = ""
         self._feedback_color = C["primary_bright"]
         self._is_listening = False
+        self._pending_dofus_hwnds = {}
 
         self.hotkey_actions = {}
         self.mouse_hotkeys = {}
@@ -125,11 +132,15 @@ class AppController(QObject):
         self._feedback_timer = QTimer(self)
         self._feedback_timer.setSingleShot(True)
         self._feedback_timer.timeout.connect(self._clear_feedback)
+        self._auto_refresh_timer = QTimer(self)
+        self._auto_refresh_timer.setInterval(AUTO_REFRESH_POLL_MS)
+        self._auto_refresh_timer.timeout.connect(self._auto_refresh_tick)
 
         # Connexions queued pour les actions devant tourner sur le thread GUI
         self.temporaryMessage.connect(self._set_feedback)
         self.calibrationError.connect(self._show_calibration_error)
         self.currentIndexChanged.connect(self._apply_current_idx)
+        self.dofusWindowEvent.connect(self._handle_dofus_window_event)
 
         self._listener_thread = None
         self._shutdown_done = False
@@ -165,6 +176,69 @@ class AppController(QObject):
             self.start_shell_hook()
         else:
             self.logic.stop_shell_hook()
+
+    def _ensure_auto_refresh_timer(self):
+        if self._pending_dofus_hwnds and not self._auto_refresh_timer.isActive():
+            self._auto_refresh_timer.start()
+
+    def _enqueue_dofus_window_event(self, hwnd, created):
+        """Appelé depuis le thread shell hook — repasse sur le thread GUI."""
+        self.dofusWindowEvent.emit(int(hwnd), bool(created))
+
+    def _handle_dofus_window_event(self, hwnd, created):
+        if not self.config.data.get("auto_refresh_windows", True):
+            return
+        if created:
+            if not is_dofus_window_hwnd(hwnd):
+                return
+            self._pending_dofus_hwnds[hwnd] = time.monotonic() + AUTO_REFRESH_WATCH_SEC
+            self._ensure_auto_refresh_timer()
+            self.refresh()
+            return
+
+        was_pending = hwnd in self._pending_dofus_hwnds
+        was_known = any(acc.get("hwnd") == hwnd for acc in self.logic.all_accounts)
+        self._pending_dofus_hwnds.pop(hwnd, None)
+        if was_pending or was_known:
+            self.refresh()
+        if not self._pending_dofus_hwnds:
+            self._auto_refresh_timer.stop()
+
+    def _hwnd_is_resolved(self, hwnd):
+        if not is_dofus_window_hwnd(hwnd):
+            return True
+        try:
+            title = win32gui.GetWindowText(hwnd)
+        except Exception:
+            return False
+        return is_recognized_dofus_character_title(title)
+
+    def _auto_refresh_tick(self):
+        if not self._pending_dofus_hwnds:
+            self._auto_refresh_timer.stop()
+            return
+
+        now = time.monotonic()
+        still_watching = {}
+        need_refresh = False
+
+        for hwnd, deadline in self._pending_dofus_hwnds.items():
+            if not win32gui.IsWindow(hwnd):
+                need_refresh = True
+                continue
+            if now >= deadline:
+                need_refresh = True
+                continue
+            if self._hwnd_is_resolved(hwnd):
+                need_refresh = True
+                continue
+            still_watching[hwnd] = deadline
+
+        self._pending_dofus_hwnds = still_watching
+        if need_refresh or still_watching:
+            self.refresh()
+        if not self._pending_dofus_hwnds:
+            self._auto_refresh_timer.stop()
 
     # ======================================================================
     #  current_idx (highlight + classe overlay)
@@ -326,6 +400,7 @@ class AppController(QObject):
     spamClick = Property(bool, lambda s: s._b("spam_click_active"), notify=togglesChanged)
     autoInvite = Property(bool, lambda s: s._b("auto_group_accept"), notify=togglesChanged)
     autoTrade = Property(bool, lambda s: s._b("auto_accept_trade"), notify=togglesChanged)
+    autoRefreshWindows = Property(bool, lambda s: s._b("auto_refresh_windows"), notify=togglesChanged)
     showTooltips = Property(bool, lambda s: s._b("show_tooltips", True), notify=togglesChanged)
     radialActive = Property(bool, lambda s: s._b("radial_menu_active", True), notify=togglesChanged)
 
@@ -543,6 +618,13 @@ class AppController(QObject):
     def onAutoTradeChange(self):
         self._sync_shell_hook()
 
+    @Slot()
+    def onAutoWindowRefreshChange(self):
+        self._sync_shell_hook()
+        if not self.config.data.get("auto_refresh_windows", True):
+            self._pending_dofus_hwnds.clear()
+            self._auto_refresh_timer.stop()
+
     # ======================================================================
     #  Fenêtre / tray
     # ======================================================================
@@ -565,6 +647,8 @@ class AppController(QObject):
             return
         self._shutdown_done = True
         self._running = False
+        self._auto_refresh_timer.stop()
+        self._pending_dofus_hwnds.clear()
         try:
             keyboard.unhook_all()
         except Exception as e:
@@ -652,6 +736,12 @@ class AppController(QObject):
             if win32api.GetAsyncKeyState(vk) >= 0:
                 return False
         return True
+
+    def _is_middle_pressed(self):
+        return (
+            win32api.GetAsyncKeyState(win32con.VK_MBUTTON) < 0
+            or self.is_hotkey_pressed("middle_click")
+        )
 
     def register_action(self, hk_str, func):
         if not hk_str or hotkey_uses_blocked_mouse(hk_str):
@@ -835,13 +925,17 @@ class AppController(QObject):
                     elif not is_pressed and was_pressed:
                         self.mouse_states[hk_str] = False
 
-            m_pressed = win32api.GetAsyncKeyState(win32con.VK_MBUTTON) < 0
-            if m_pressed and self.config.data.get("spam_click_active", False):
-                fg_hwnd = win32gui.GetForegroundWindow()
-                is_dofus = any(acc["hwnd"] == fg_hwnd for acc in self.logic.all_accounts)
-                if is_dofus and not self._spam_click_running:
+            if (
+                self.config.data.get("spam_click_active", False)
+                and self._is_middle_pressed()
+                and not self._spam_click_running
+            ):
+                target_hwnd = self.logic.resolve_account_hwnd()
+                if target_hwnd:
                     self._spam_click_running = True
-                    threading.Thread(target=self._spam_click_loop, daemon=True).start()
+                    threading.Thread(
+                        target=self._spam_click_loop, args=(target_hwnd,), daemon=True
+                    ).start()
 
             radial_hk = self.config.data.get("radial_menu_hotkey", "")
             radial_active = self.config.data.get("radial_menu_active", True)
@@ -892,19 +986,17 @@ class AppController(QObject):
                 self.currentIndexChanged.emit(index)
                 break
 
-    def _spam_click_loop(self):
+    def _spam_click_loop(self, target_hwnd):
         try:
-            while win32api.GetAsyncKeyState(win32con.VK_MBUTTON) < 0:
-                cur_fg = win32gui.GetForegroundWindow()
-                if not any(acc["hwnd"] == cur_fg for acc in self.logic.all_accounts):
+            while self._is_middle_pressed():
+                if not win32gui.IsWindow(target_hwnd):
                     break
-                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+                if win32gui.GetForegroundWindow() != target_hwnd:
+                    self.logic.focus_window(target_hwnd)
+                x, y = win32api.GetCursorPos()
+                self.logic._fast_hardware_click(x, y)
                 time.sleep(0.02)
-                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-                time.sleep(0.02)
-                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                time.sleep(0.02)
-                win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+                self.logic._fast_hardware_click(x, y)
                 time.sleep(0.20)
         finally:
             self._spam_click_running = False

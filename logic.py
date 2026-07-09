@@ -14,8 +14,30 @@ import os
 from constants import AZERTY_TO_SCAN, log_exception
 
 HSHELL_FLASH = 0x8006
+HSHELL_WINDOWCREATED = 1
+HSHELL_WINDOWDESTROYED = 2
+
+DOFUS_WINDOW_CLASSES = frozenset(
+    {"UnityWndClass", "ApolloRuntimeContentWindow", "Dofus"}
+)
 
 BLOCK_INPUT_TIMEOUT_SEC = 120
+
+
+def is_dofus_window_hwnd(hwnd):
+    try:
+        if not win32gui.IsWindow(hwnd) or not win32gui.IsWindowVisible(hwnd):
+            return False
+        return win32gui.GetClassName(hwnd) in DOFUS_WINDOW_CLASSES
+    except Exception:
+        return False
+
+
+def is_recognized_dofus_character_title(title):
+    clean = (title or "").strip()
+    if not clean:
+        return False
+    return not clean.lower().startswith("dofus")
 
 
 @contextmanager
@@ -24,8 +46,12 @@ def block_input(timeout=BLOCK_INPUT_TIMEOUT_SEC):
     timer = None
     blocked = False
     try:
-        ctypes.windll.user32.BlockInput(True)
-        blocked = True
+        blocked = bool(ctypes.windll.user32.BlockInput(True))
+        if not blocked:
+            log_exception(
+                "BlockInput",
+                "échec — lancez Reframed en administrateur (run.bat) pour bloquer la souris pendant les macros",
+            )
 
         def _force_release():
             try:
@@ -33,9 +59,10 @@ def block_input(timeout=BLOCK_INPUT_TIMEOUT_SEC):
             except OSError as e:
                 log_exception("BlockInput timeout release", e)
 
-        timer = threading.Timer(timeout, _force_release)
-        timer.daemon = True
-        timer.start()
+        if blocked:
+            timer = threading.Timer(timeout, _force_release)
+            timer.daemon = True
+            timer.start()
         yield
     except OSError as e:
         log_exception("BlockInput enable", e)
@@ -191,12 +218,16 @@ class DofusLogic:
         self.shell_listener = None
         self.last_flash_times = {} # Cooldown pour éviter les doubles clics
         self._macro_lock = threading.Lock()
+        self.window_event_callback = None
 
     def shell_hook_needed(self):
-        return bool(self.config.data.get("auto_accept_trade", False))
+        return bool(
+            self.config.data.get("auto_accept_trade", False)
+            or self.config.data.get("auto_refresh_windows", True)
+        )
 
     def start_shell_hook(self):
-        """Démarre le listener de clignotement pour l'auto-accept échange."""
+        """Shell hook : auto-refresh fenêtres Dofus et/ou auto-accept échange."""
         if not self.shell_hook_needed():
             return
         if self.shell_listener:
@@ -210,10 +241,15 @@ class DofusLogic:
             self.shell_listener = None
 
     def on_shell_hook(self, msg, wParam, lParam):
-        """Gère les messages SHELLHOOK (clignotement barre des tâches uniquement)."""
+        """Gère les messages SHELLHOOK (fenêtres Dofus + clignotement échange)."""
         if self.shell_listener and msg == self.shell_listener.msg_id:
             if wParam == HSHELL_FLASH:
                 self._handle_flashing_window(lParam)
+            elif wParam in (HSHELL_WINDOWCREATED, HSHELL_WINDOWDESTROYED):
+                if self.config.data.get("auto_refresh_windows", True):
+                    cb = self.window_event_callback
+                    if cb:
+                        cb(lParam, wParam == HSHELL_WINDOWCREATED)
 
     def _handle_flashing_window(self, hwnd):
         if not self.shell_hook_needed():
@@ -493,6 +529,41 @@ class DofusLogic:
                 timeout -= 1
         except Exception as e:
             log_exception("focus_window", e)
+
+    def resolve_account_hwnd(self, hwnd=None):
+        """Retrouve le hwnd compte Dofus depuis le focus ou la position du curseur."""
+        known = {acc["hwnd"] for acc in self.all_accounts}
+        if not known:
+            return None
+        candidates = []
+        if hwnd:
+            candidates.append(hwnd)
+        else:
+            try:
+                candidates.append(win32gui.GetForegroundWindow())
+                candidates.append(win32gui.WindowFromPoint(win32api.GetCursorPos()))
+            except Exception:
+                pass
+        for h in candidates:
+            if not h:
+                continue
+            if h in known:
+                return h
+            try:
+                root = win32gui.GetAncestor(h, win32con.GA_ROOT)
+                if root in known:
+                    return root
+                cur = h
+                for _ in range(12):
+                    parent = win32gui.GetParent(cur)
+                    if not parent:
+                        break
+                    if parent in known:
+                        return parent
+                    cur = parent
+            except Exception:
+                continue
+        return None
 
     def get_relative_ratio_pos(self, hwnd=None):
         x_screen, y_screen = win32gui.GetCursorPos()

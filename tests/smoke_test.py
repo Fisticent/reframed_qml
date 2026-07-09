@@ -165,6 +165,17 @@ def main():
     check(sanitize_blocked_mouse_hotkeys(sample), "sanitize détecte les clics G/D")
     check(sample["prev_key"] == "tab" and sample["sync_key"] == "", "sanitize conserve / efface")
 
+    print("== 5c. Auto-refresh fenêtres Dofus ==")
+    from logic import is_recognized_dofus_character_title, DofusLogic
+    check(is_recognized_dofus_character_title("Bob - Iop"), "titre perso reconnu")
+    check(not is_recognized_dofus_character_title("Dofus"), "titre launcher ignoré")
+    check(not is_recognized_dofus_character_title(""), "titre vide ignoré")
+    logic = DofusLogic(cfg)
+    check(logic.shell_hook_needed(), "shell hook actif avec auto_refresh par défaut")
+    logic.config.data["auto_refresh_windows"] = False
+    logic.config.data["auto_accept_trade"] = False
+    check(not logic.shell_hook_needed(), "shell hook off si tout désactivé")
+
     print("== 6. Radial controller ==")
     try:
         radial.set_scale(1.5)
